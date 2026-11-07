@@ -1,0 +1,11 @@
+# server runtime files
+server/*
+!server/server.properties
+!server/bukkit.yml
+!server/plugins/
+server/plugins/*
+!server/plugins/MacePractice.jar
+
+# build output
+plugin/build/
+plugin/.gradle/

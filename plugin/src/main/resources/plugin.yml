@@ -1,0 +1,15 @@
+name: MacePractice
+version: 1.0.0
+main: dev.macepractice.MacePractice
+api-version: '26.2'
+load: STARTUP
+description: Arena + practice bot for mace PvP
+commands:
+  bot:
+    description: Open the bot settings menu
+    aliases: [menu, settings]
+  kit:
+    description: Refill your kit
+    aliases: [refill]
+  resetbot:
+    description: Respawn your practice bot
