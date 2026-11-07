@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Firework;
 import org.bukkit.entity.Mannequin;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -17,6 +18,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityResurrectEvent;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -60,12 +62,17 @@ public final class Listeners implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
         plugin.removeBot(e.getPlayer());
+        plugin.saveData();
     }
 
     // ---- combat -------------------------------------------------------------------------
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent e) {
+        if (e.getDamager() instanceof Firework fw && fw.hasMetadata(Effects.HARMLESS)) {
+            e.setCancelled(true);
+            return;
+        }
         if (!(e.getEntity() instanceof Mannequin m)) {
             return;
         }
@@ -79,9 +86,47 @@ public final class Listeners implements Listener {
         }
         if (damager instanceof Player p && !p.getUniqueId().equals(bot.owner().getUniqueId())) {
             e.setCancelled(true); // only the owner fights their bot
+        }
+    }
+
+    /** Runs after armor/enchant reductions: combo counter + floating damage numbers. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onDamageResult(EntityDamageByEntityEvent e) {
+        double dmg = e.getFinalDamage();
+        if (e.getEntity() instanceof Mannequin m) {
+            PracticeBot bot = plugin.botByEntity(m);
+            if (bot == null) return;
+            bot.onHurt();
+            Entity damager = e.getDamager();
+            if (damager instanceof Projectile proj && proj.getShooter() instanceof Entity shooter) {
+                damager = shooter;
+            }
+            if (damager.equals(bot.owner()) && dmg > 0) {
+                bot.onOwnerHit();
+            }
+            if (dmg > 0 && plugin.settings(bot.owner()).damageNumbers) {
+                Effects.damageNumber(plugin, m.getLocation().add(0, 2.1, 0), dmg / 2, dmg >= 8);
+            }
             return;
         }
-        bot.onHurt();
+        if (e.getEntity() instanceof Player p && e.getDamager() instanceof Mannequin m) {
+            PracticeBot bot = plugin.botByEntity(m);
+            if (bot == null || !bot.owner().equals(p)) return;
+            if (dmg > 0) {
+                bot.onBotHitOwner();
+                if (plugin.settings(p).damageNumbers) {
+                    Effects.damageNumber(plugin, p.getLocation().add(0, 2.1, 0), dmg / 2, dmg >= 8);
+                }
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onFood(FoodLevelChangeEvent e) {
+        if (e.getEntity() instanceof Player p && plugin.settings(p).infiniteFood && e.getFoodLevel() < p.getFoodLevel()) {
+            e.setCancelled(true);
+            p.setSaturation(20f);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -168,9 +213,5 @@ public final class Listeners implements Listener {
     @EventHandler
     public void onPlace(BlockPlaceEvent e) {
         if (e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true);
-    }
-
-    static boolean isSettings(ItemStack it) {
-        return it != null && it.getType() == Material.NETHER_STAR && Kit.isSettingsItem(it);
     }
 }

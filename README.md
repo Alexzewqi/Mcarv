@@ -35,20 +35,34 @@ To make yourself op, type `op YourName` in the server console.
 
 You also get a totem in your offhand, netherite armor (Protection IV, Unbreaking III, Mending, plus Feather Falling IV on the boots), spare wind charges and pearls, and an inventory full of totems.
 
-## Bot settings menu
+## The arena
+
+The plugin builds the arena itself, so there's no map to download. It's a **flat 61×61 floor** floating in the void. It has walls with invisible barriers that go up to build height, so wind charges and elytra can't take you out. You spawn on the north marker and the bot spawns on the south one.
+There are **7 themes**, all flat with normal-grip blocks: Deepslate, Nether, End, Snow, Desert, Copper and Grass. Change the theme from the menu.
+
+## Settings menu
 
 To open the menu, sneak and press **F**, run **`/bot`**, or click the **nether star** in your inventory.
 
-- **Bot Movement**: on or off. When it's off the bot stands still, but it still takes knockback, so you can drill combos.
-- **Bot Attacks**: on or off. Turn it off to use the bot as a punching bag.
-- **Bot Mace Combos**: the bot wind-charges up and smashes you with a density mace, and on harder levels it chains smashes with Wind Burst.
-- **Bot Shields Your Dives**: the bot blocks when you dive at it with a mace. When this is off, it sidesteps.
-- **Difficulty**: Easy, Normal or Hard. This changes speed, crit rate, combo rate, reactions and how often it misses.
-- **Bot Infinite Totems**: when this is off, the bot has 10 totems and then it can die. You get a "You won!" screen and the round resets.
-- **My Infinite Totems**: refills a totem in your hand after it pops.
-- **Refill My Kit** and **Reset Round**.
+**Bot:** Movement · Attacks · Mace Combos · Shields Your Dives · Difficulty (Easy / Normal / Hard / **Insane**) · Infinite Totems · Skin (default or *your own skin*)
 
-Commands: `/bot`, `/kit`, `/resetbot`.
+**You:** Infinite Totems · Infinite Food · Damage Numbers · Sidebar · Round Countdown · Arena Theme · Stats
+
+**Actions:** Save Kit Layout · Reset Kit Layout · Refill Kit · Reset Round
+
+## Features
+
+- **Kit layout saving:** move your items where you like them, then use `/savekit` or the menu button. You get that layout every round.
+- **Sidebar:** bot HP, bot totems, pops this round, round timer, your combo, wins/losses and your best time.
+- **Floating damage numbers** on every hit. Big hits, like mace smashes, show in gold.
+- **Combo counter:** an `x5 COMBO` popup with a rising sound. Your highest combo is saved.
+- **3, 2, 1, FIGHT!** countdown at the start of each round.
+- **Leaderboard:** a floating board over the south wall shows the fastest bot kills on Normal, Hard and Insane. Turn off *Bot Infinite Totems* so the bot can die, and race the clock.
+- **Win celebration:** lightning, totem particles and fireworks. The fireworks are harmless.
+- The bot's **HP and totems show under its name**.
+- **Stats are saved** across restarts in `server/plugins/MacePractice/data.yml`. Use `/stats` to see them.
+
+Commands: `/bot`, `/kit`, `/resetbot`, `/savekit`, `/resetkit`, `/stats`.
 
 ## How the bot plays
 

@@ -20,11 +20,17 @@ import org.bukkit.inventory.meta.ItemMeta;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Chest GUI with the bot toggles. */
+/** Chest GUI with every toggle. */
 public final class Menu implements Listener {
 
+    // Row 2: bot behaviour
     private static final int MOVEMENT = 10, ATTACKS = 11, COMBOS = 12, SHIELD = 13, DIFFICULTY = 14,
-            BOT_TOTEMS = 15, MY_TOTEMS = 16, REFILL = 21, RESET = 22, CLOSE = 23;
+            BOT_TOTEMS = 15, SKIN = 16;
+    // Row 3: you
+    private static final int MY_TOTEMS = 19, FOOD = 20, NUMBERS = 21, SIDEBAR = 22, COUNTDOWN = 23,
+            THEME = 24, STATS = 25;
+    // Row 5: actions
+    private static final int SAVE_LAYOUT = 37, RESET_LAYOUT = 38, REFILL = 40, RESET = 42, CLOSE = 43;
 
     private final MacePractice plugin;
 
@@ -43,14 +49,16 @@ public final class Menu implements Listener {
 
     public static void open(Player p, MacePractice plugin) {
         Holder h = new Holder();
-        h.inv = Bukkit.createInventory(h, 27, Component.text("Bot Settings"));
-        fill(h.inv, plugin.settings(p));
+        h.inv = Bukkit.createInventory(h, 54, Component.text("Mace Practice Settings"));
+        fill(h.inv, plugin.settings(p), plugin);
         p.openInventory(h.inv);
     }
 
-    private static void fill(Inventory inv, BotSettings s) {
-        ItemStack pane = item(Material.GRAY_STAINED_GLASS_PANE, Component.text(" "), List.of());
+    private static void fill(Inventory inv, BotSettings s, MacePractice plugin) {
+        ItemStack pane = item(Material.BLACK_STAINED_GLASS_PANE, Component.text(" "), List.of());
         for (int i = 0; i < inv.getSize(); i++) inv.setItem(i, pane);
+        inv.setItem(4, item(Material.WITHER_SKELETON_SKULL, Component.text("Bot", NamedTextColor.RED), List.of(line("How your bot behaves ↓"))));
+        inv.setItem(31, item(Material.PLAYER_HEAD, Component.text("You", NamedTextColor.AQUA), List.of(line("Your options ↑  Actions ↓"))));
 
         inv.setItem(MOVEMENT, toggle(Material.LEATHER_BOOTS, "Bot Movement", s.movement,
                 "Off = bot stands still (still faces you,", "takes knockback, and can still hit you)."));
@@ -60,22 +68,46 @@ public final class Menu implements Listener {
                 "Wind charge up + density mace smash,", "chained with Wind Burst."));
         inv.setItem(SHIELD, toggle(Material.SHIELD, "Bot Shields Your Dives", s.shield,
                 "Off = it sidesteps instead."));
-
         Material diffIcon = switch (s.difficulty) {
             case EASY -> Material.LIME_CONCRETE;
             case NORMAL -> Material.YELLOW_CONCRETE;
             case HARD -> Material.RED_CONCRETE;
+            case INSANE -> Material.CRYING_OBSIDIAN;
         };
         inv.setItem(DIFFICULTY, item(diffIcon,
                 Component.text("Difficulty: " + s.difficulty.name(), NamedTextColor.GOLD),
-                List.of(line("Click to cycle Easy / Normal / Hard."),
-                        line("Speed, crits, combo rate, reactions."))));
-
+                List.of(line("Click to cycle Easy / Normal / Hard / Insane."),
+                        line("Speed, crits, combo rate, reactions, misses."))));
         inv.setItem(BOT_TOTEMS, toggle(Material.TOTEM_OF_UNDYING, "Bot Infinite Totems", s.botInfiniteTotems,
-                "Off = bot has " + s.botTotems + " totems, then it can die."));
+                "Off = bot has " + s.botTotems + " totems, then it can die.", "Kill it fast to get on the leaderboard!"));
+        inv.setItem(SKIN, item(Material.ARMOR_STAND, Component.text("Bot Skin: " + s.skin.label, NamedTextColor.GOLD),
+                List.of(line("Click to cycle: Default / Your skin."))));
+
         inv.setItem(MY_TOTEMS, toggle(Material.TOTEM_OF_UNDYING, "My Infinite Totems", s.playerInfiniteTotems,
                 "Refills the hand your totem popped from."));
+        inv.setItem(FOOD, toggle(Material.COOKED_BEEF, "Infinite Food", s.infiniteFood,
+                "Hunger never drops."));
+        inv.setItem(NUMBERS, toggle(Material.NAME_TAG, "Damage Numbers", s.damageNumbers,
+                "Floating numbers on every hit."));
+        inv.setItem(SIDEBAR, toggle(Material.OAK_SIGN, "Sidebar", s.sidebar,
+                "Bot HP, round timer, combo, your stats."));
+        inv.setItem(COUNTDOWN, toggle(Material.CLOCK, "Round Countdown", s.countdown,
+                "3, 2, 1, FIGHT! at the start of each round."));
+        inv.setItem(THEME, item(Material.FILLED_MAP, Component.text("Arena: " + plugin.theme().label, NamedTextColor.GOLD),
+                List.of(line("Click to cycle arena themes (all flat)."), line("Changes it for everyone."))));
+        List<Component> stats = new ArrayList<>();
+        stats.add(line("Wins: " + s.wins + "   Losses: " + s.losses));
+        stats.add(line("Totems popped: " + s.popsForced));
+        stats.add(line("Max combo: " + s.maxCombo));
+        for (BotSettings.Difficulty d : BotSettings.Difficulty.values()) {
+            stats.add(line("Best " + d.name() + ": " + BotSettings.formatTime(s.bestMs[d.ordinal()])));
+        }
+        inv.setItem(STATS, item(Material.WRITABLE_BOOK, Component.text("Your Stats", NamedTextColor.AQUA), stats));
 
+        inv.setItem(SAVE_LAYOUT, item(Material.LIME_SHULKER_BOX, Component.text("Save Kit Layout", NamedTextColor.GREEN),
+                List.of(line("Move your items where you like them,"), line("then click here (or /savekit)."))));
+        inv.setItem(RESET_LAYOUT, item(Material.RED_SHULKER_BOX, Component.text("Reset Kit Layout", NamedTextColor.RED),
+                List.of(line("Back to the default hotbar."))));
         inv.setItem(REFILL, item(Material.CHEST, Component.text("Refill My Kit", NamedTextColor.AQUA),
                 List.of(line("Heals you and gives the full kit back."))));
         inv.setItem(RESET, item(Material.RESPAWN_ANCHOR, Component.text("Reset Round", NamedTextColor.AQUA),
@@ -101,6 +133,7 @@ public final class Menu implements Listener {
             return;
         }
         BotSettings s = plugin.settings(p);
+        PracticeBot bot = plugin.bot(p);
         switch (e.getRawSlot()) {
             case MOVEMENT -> s.movement = !s.movement;
             case ATTACKS -> s.attacks = !s.attacks;
@@ -111,9 +144,27 @@ public final class Menu implements Listener {
                 s.botInfiniteTotems = !s.botInfiniteTotems;
                 plugin.resetRound(p);
             }
+            case SKIN -> {
+                s.skin = s.skin.next();
+                if (bot != null) bot.applySkin();
+            }
             case MY_TOTEMS -> s.playerInfiniteTotems = !s.playerInfiniteTotems;
+            case FOOD -> s.infiniteFood = !s.infiniteFood;
+            case NUMBERS -> s.damageNumbers = !s.damageNumbers;
+            case SIDEBAR -> s.sidebar = !s.sidebar;
+            case COUNTDOWN -> s.countdown = !s.countdown;
+            case THEME -> plugin.setTheme(plugin.theme().next(), p);
+            case SAVE_LAYOUT -> {
+                Kit.saveLayout(p, s);
+                p.sendMessage(Component.text("Kit layout saved!", NamedTextColor.GREEN));
+            }
+            case RESET_LAYOUT -> {
+                s.layout = null;
+                Kit.give(p, s);
+                p.sendMessage(Component.text("Kit layout reset.", NamedTextColor.YELLOW));
+            }
             case REFILL -> {
-                Kit.give(p);
+                Kit.give(p, s);
                 p.closeInventory();
             }
             case RESET -> {
@@ -127,7 +178,7 @@ public final class Menu implements Listener {
         }
         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.6f, 1.2f);
         if (p.getOpenInventory().getTopInventory().getHolder() instanceof Holder) {
-            fill(e.getView().getTopInventory(), s);
+            fill(e.getView().getTopInventory(), s, plugin);
         }
     }
 

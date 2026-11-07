@@ -1,12 +1,18 @@
 package dev.macepractice;
 
-/** Per-player toggles, changed from the menu. */
+import org.bukkit.configuration.ConfigurationSection;
+
+import java.util.Arrays;
+import java.util.List;
+
+/** Per-player toggles + stats, changed from the menu and saved to data.yml. */
 public final class BotSettings {
 
     public enum Difficulty {
         EASY(0.20, 0.25, 0.010, 0.25, 0, 7, 0.35),
         NORMAL(0.26, 0.55, 0.025, 0.55, 1, 4, 0.15),
-        HARD(0.29, 0.85, 0.045, 0.85, 2, 2, 0.04);
+        HARD(0.29, 0.85, 0.045, 0.85, 2, 2, 0.04),
+        INSANE(0.31, 0.97, 0.070, 0.97, 3, 0, 0.0);
 
         /** Ground speed in blocks/tick (player sprint is ~0.28). */
         final double speed;
@@ -39,6 +45,21 @@ public final class BotSettings {
         }
     }
 
+    public enum Skin {
+        DEFAULT("Default"), MINE("Your skin");
+
+        final String label;
+
+        Skin(String label) {
+            this.label = label;
+        }
+
+        public Skin next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
+    // ---- toggles ----
     public boolean movement = true;
     public boolean attacks = true;
     public boolean maceCombos = true;
@@ -47,4 +68,77 @@ public final class BotSettings {
     public int botTotems = 10;
     public boolean playerInfiniteTotems = false;
     public Difficulty difficulty = Difficulty.NORMAL;
+    public Skin skin = Skin.DEFAULT;
+    public boolean damageNumbers = true;
+    public boolean sidebar = true;
+    public boolean countdown = true;
+    public boolean infiniteFood = false;
+    /** Saved kit layout: material name per inventory slot (41 entries), or null for the default layout. */
+    public String[] layout;
+
+    // ---- stats ----
+    public int wins;
+    public int losses;
+    public int popsForced;
+    public int maxCombo;
+    public long[] bestMs = new long[Difficulty.values().length];
+
+    public void load(ConfigurationSection c) {
+        if (c == null) return;
+        movement = c.getBoolean("movement", movement);
+        attacks = c.getBoolean("attacks", attacks);
+        maceCombos = c.getBoolean("maceCombos", maceCombos);
+        shield = c.getBoolean("shield", shield);
+        botInfiniteTotems = c.getBoolean("botInfiniteTotems", botInfiniteTotems);
+        playerInfiniteTotems = c.getBoolean("playerInfiniteTotems", playerInfiniteTotems);
+        damageNumbers = c.getBoolean("damageNumbers", damageNumbers);
+        sidebar = c.getBoolean("sidebar", sidebar);
+        countdown = c.getBoolean("countdown", countdown);
+        infiniteFood = c.getBoolean("infiniteFood", infiniteFood);
+        try {
+            difficulty = Difficulty.valueOf(c.getString("difficulty", difficulty.name()));
+        } catch (IllegalArgumentException ignored) {
+        }
+        try {
+            skin = Skin.valueOf(c.getString("skin", skin.name()));
+        } catch (IllegalArgumentException ignored) {
+        }
+        List<String> l = c.getStringList("layout");
+        layout = l.size() == 41 ? l.toArray(new String[0]) : null;
+        wins = c.getInt("wins");
+        losses = c.getInt("losses");
+        popsForced = c.getInt("popsForced");
+        maxCombo = c.getInt("maxCombo");
+        for (Difficulty d : Difficulty.values()) {
+            bestMs[d.ordinal()] = c.getLong("best." + d.name(), 0);
+        }
+    }
+
+    public void save(ConfigurationSection c) {
+        c.set("movement", movement);
+        c.set("attacks", attacks);
+        c.set("maceCombos", maceCombos);
+        c.set("shield", shield);
+        c.set("botInfiniteTotems", botInfiniteTotems);
+        c.set("playerInfiniteTotems", playerInfiniteTotems);
+        c.set("damageNumbers", damageNumbers);
+        c.set("sidebar", sidebar);
+        c.set("countdown", countdown);
+        c.set("infiniteFood", infiniteFood);
+        c.set("difficulty", difficulty.name());
+        c.set("skin", skin.name());
+        c.set("layout", layout == null ? null : Arrays.asList(layout));
+        c.set("wins", wins);
+        c.set("losses", losses);
+        c.set("popsForced", popsForced);
+        c.set("maxCombo", maxCombo);
+        for (Difficulty d : Difficulty.values()) {
+            c.set("best." + d.name(), bestMs[d.ordinal()] == 0 ? null : bestMs[d.ordinal()]);
+        }
+    }
+
+    public static String formatTime(long ms) {
+        if (ms <= 0) return "-";
+        return String.format("%d:%02d.%d", ms / 60000, (ms / 1000) % 60, (ms / 100) % 10);
+    }
 }

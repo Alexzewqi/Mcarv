@@ -20,6 +20,9 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
+import io.papermc.paper.datacomponent.item.ResolvableProfile;
+import net.kyori.adventure.title.Title;
+import java.time.Duration;
 
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -58,6 +61,10 @@ public final class PracticeBot {
     private int totemsLeft;
     private int pops;
     private boolean popRefillPending;
+    private int countdown;
+    private long roundStart;
+    private int combo;
+    private int lastComboTick;
 
     public PracticeBot(MacePractice plugin, Player owner, BotSettings settings) {
         this.plugin = plugin;
@@ -98,6 +105,7 @@ public final class PracticeBot {
             eq.setItemInMainHand(Kit.sword());
             eq.setItemInOffHand(Kit.totem());
         });
+        applySkin();
         resetState();
     }
 
@@ -116,7 +124,17 @@ public final class PracticeBot {
         entity.setHealth(max != null ? max.getValue() : 20.0);
         entity.getEquipment().setItemInOffHand(Kit.totem());
         holdMain(Kit.sword());
+        applySkin();
         resetState();
+    }
+
+    public void applySkin() {
+        if (entity == null) return;
+        if (s.skin == BotSettings.Skin.MINE) {
+            entity.setProfile(ResolvableProfile.resolvableProfile(owner.getPlayerProfile()));
+        } else {
+            entity.setProfile(Mannequin.defaultProfile());
+        }
     }
 
     private void resetState() {
@@ -128,6 +146,13 @@ public final class PracticeBot {
         totemsLeft = s.botTotems;
         pops = 0;
         respawnIn = -1;
+        combo = 0;
+        countdown = s.countdown ? 60 : 0;
+        roundStart = System.currentTimeMillis() + countdown * 50L;
+        if (countdown == 0) {
+            owner.showTitle(Title.title(Component.text("FIGHT!", NamedTextColor.RED), Component.empty(),
+                    Title.Times.times(Duration.ZERO, Duration.ofMillis(600), Duration.ofMillis(300))));
+        }
     }
 
     public void remove() {
@@ -150,20 +175,69 @@ public final class PracticeBot {
             totemsLeft--;
         }
         popRefillPending = true;
+        s.popsForced++;
         owner.sendActionBar(Component.text("Bot popped! (" + pops + ")", NamedTextColor.GOLD));
+        owner.playSound(owner.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.8f, 0.6f);
     }
 
     public void onDeath() {
         respawnIn = RESPAWN_DELAY;
-        owner.showTitle(net.kyori.adventure.title.Title.title(
+        long ms = roundMs();
+        s.wins++;
+        int d = s.difficulty.ordinal();
+        boolean record = s.bestMs[d] == 0 || ms < s.bestMs[d];
+        if (record) {
+            s.bestMs[d] = ms;
+        }
+        plugin.leaderboard().submit(owner.getName(), owner.getUniqueId().toString(), s.difficulty, ms);
+        plugin.leaderboard().render(plugin.arenaWorld());
+        owner.showTitle(Title.title(
                 Component.text("You won!", NamedTextColor.GREEN),
-                Component.text("Bot popped " + pops + " totems", NamedTextColor.GRAY)));
-        owner.playSound(owner.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+                Component.text(BotSettings.formatTime(ms) + (record ? "  NEW BEST!" : "") + "  •  " + pops + " pops",
+                        record ? NamedTextColor.GOLD : NamedTextColor.GRAY)));
+        Effects.victory(plugin, entity.getLocation(), owner);
     }
 
-    /** Owner died: heal up for the next round. */
+    /** Owner died: count the loss. */
     public void onOwnerDeath() {
+        s.losses++;
         owner.sendMessage(Component.text("Bot won. It popped " + pops + " totems this round.", NamedTextColor.RED));
+    }
+
+    /** You landed a hit on the bot. */
+    public void onOwnerHit() {
+        if (tick - lastComboTick > 60) combo = 0;
+        combo++;
+        lastComboTick = tick;
+        if (combo > s.maxCombo) s.maxCombo = combo;
+        if (combo >= 2) {
+            owner.sendActionBar(Component.text("x" + combo + " COMBO", combo >= 5 ? NamedTextColor.GOLD : NamedTextColor.YELLOW));
+            owner.playSound(owner.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.6f, Math.min(2f, 0.6f + combo * 0.1f));
+        }
+    }
+
+    /** The bot hit you: your combo is over. */
+    public void onBotHitOwner() {
+        if (combo >= 3) {
+            owner.sendActionBar(Component.text("Combo broken at x" + combo, NamedTextColor.GRAY));
+        }
+        combo = 0;
+    }
+
+    public int combo() {
+        return tick - lastComboTick > 60 ? 0 : combo;
+    }
+
+    public int totemsLeft() {
+        return Math.max(0, totemsLeft);
+    }
+
+    public long roundMs() {
+        return Math.max(0, System.currentTimeMillis() - roundStart);
+    }
+
+    public boolean inCountdown() {
+        return countdown > 0;
     }
 
     public int pops() {
@@ -202,6 +276,25 @@ public final class PracticeBot {
             entity.teleport(Arena.botSpawn(me.getWorld()));
             entity.setVelocity(new Vector());
             entity.setFallDistance(0);
+            return;
+        }
+
+        if (countdown > 0) {
+            countdown--;
+            if (countdown % 20 == 0 || countdown == 59) {
+                int n = (countdown + 19) / 20;
+                if (countdown == 0) {
+                    owner.showTitle(Title.title(Component.text("FIGHT!", NamedTextColor.RED), Component.empty(),
+                            Title.Times.times(Duration.ZERO, Duration.ofMillis(600), Duration.ofMillis(300))));
+                    owner.playSound(owner.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 0.5f, 1.5f);
+                } else {
+                    owner.showTitle(Title.title(Component.text(String.valueOf(n), NamedTextColor.GOLD), Component.text(s.difficulty.name(), NamedTextColor.GRAY),
+                            Title.Times.times(Duration.ZERO, Duration.ofMillis(900), Duration.ZERO)));
+                    owner.playSound(owner.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1f, 1f);
+                }
+            }
+            entity.lookAt(owner.getEyeLocation().getX(), owner.getEyeLocation().getY(), owner.getEyeLocation().getZ(), LookAnchor.EYES);
+            idle();
             return;
         }
 
@@ -244,7 +337,7 @@ public final class PracticeBot {
 
         switch (state) {
             case FIGHT -> fight();
-            case COMBO -> combo();
+            case COMBO -> maceCombo();
             case BLOCK -> block();
         }
     }
@@ -415,7 +508,7 @@ public final class PracticeBot {
         knockbackTicks = 0;
     }
 
-    private void combo() {
+    private void maceCombo() {
         comboTicks++;
         if (comboTicks == 3) {
             holdMain(Kit.densityMace());
@@ -553,17 +646,13 @@ public final class PracticeBot {
     }
 
     private void sendHud() {
-        if (state == State.COMBO && tick % 20 != 0) return;
         double hp = entity.getHealth() + entity.getAbsorptionAmount();
         String totems = s.botInfiniteTotems ? "∞" : String.valueOf(Math.max(0, totemsLeft));
-        owner.sendActionBar(Component.text()
-                .append(Component.text("Bot ", NamedTextColor.GRAY))
+        entity.setDescription(Component.text()
                 .append(Component.text(String.format("%.1f❤", hp / 2.0), NamedTextColor.RED))
-                .append(Component.text("  Totems: ", NamedTextColor.GRAY))
-                .append(Component.text(totems, NamedTextColor.GOLD))
-                .append(Component.text("  Pops: ", NamedTextColor.GRAY))
-                .append(Component.text(pops, NamedTextColor.YELLOW))
-                .append(Component.text("  [" + s.difficulty.name() + (s.movement ? "" : ", frozen") + "]", NamedTextColor.DARK_GRAY))
+                .append(Component.text("  ", NamedTextColor.GRAY))
+                .append(Component.text("⛨ " + totems, NamedTextColor.GOLD))
+                .append(Component.text("  " + s.difficulty.name(), NamedTextColor.DARK_GRAY))
                 .build());
     }
 }

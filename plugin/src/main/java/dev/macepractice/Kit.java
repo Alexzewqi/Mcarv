@@ -110,35 +110,68 @@ public final class Kit {
 
     // ---- loadout ------------------------------------------------------------------------
 
-    /**
-     * Hotbar: sword, wind charges, pearls, steak, spear, shield, elytra (in place of the breach mace),
-     * density/wind-burst mace, totem. Offhand totem, the rest of the inventory is spare totems.
-     */
-    public static void give(Player p) {
+    /** Default layout, in {@link PlayerInventory#getContents()} order: 0-35 storage, 36-39 boots..helmet, 40 offhand. */
+    private static String[] defaultLayout() {
+        String[] l = new String[41];
+        java.util.Arrays.fill(l, "TOTEM_OF_UNDYING");
+        // Hotbar: sword, wind charges, pearls, steak, spear, shield, elytra (in place of the breach mace),
+        // density/wind-burst mace, totem.
+        String[] hotbar = {"NETHERITE_SWORD", "WIND_CHARGE", "ENDER_PEARL", "COOKED_BEEF", "DIAMOND_SPEAR",
+                "SHIELD", "ELYTRA", "MACE", "TOTEM_OF_UNDYING"};
+        System.arraycopy(hotbar, 0, l, 0, 9);
+        l[SETTINGS_SLOT] = "NETHER_STAR";
+        l[10] = "WIND_CHARGE";
+        l[11] = "ENDER_PEARL";
+        l[36] = "NETHERITE_BOOTS";
+        l[37] = "NETHERITE_LEGGINGS";
+        l[38] = "NETHERITE_CHESTPLATE";
+        l[39] = "NETHERITE_HELMET";
+        l[40] = "TOTEM_OF_UNDYING";
+        return l;
+    }
+
+    /** A fresh, full kit item for a layout entry. */
+    private static ItemStack fromId(String id) {
+        if (id == null) return null;
+        return switch (id) {
+            case "NETHERITE_SWORD" -> sword();
+            case "WIND_CHARGE" -> new ItemStack(Material.WIND_CHARGE, 64);
+            case "ENDER_PEARL" -> new ItemStack(Material.ENDER_PEARL, 16);
+            case "COOKED_BEEF" -> new ItemStack(Material.COOKED_BEEF, 64);
+            case "DIAMOND_SPEAR" -> spear();
+            case "SHIELD" -> shield();
+            case "ELYTRA" -> elytra();
+            case "MACE" -> densityMace();
+            case "TOTEM_OF_UNDYING" -> totem();
+            case "NETHER_STAR" -> settingsItem();
+            case "NETHERITE_HELMET" -> helmet();
+            case "NETHERITE_CHESTPLATE" -> chestplate();
+            case "NETHERITE_LEGGINGS" -> leggings();
+            case "NETHERITE_BOOTS" -> boots();
+            default -> null;
+        };
+    }
+
+    /** Remembers where you put every item; empty slots stay empty. */
+    public static void saveLayout(Player p, BotSettings s) {
+        ItemStack[] c = p.getInventory().getContents();
+        String[] l = new String[41];
+        for (int i = 0; i < 41 && i < c.length; i++) {
+            l[i] = c[i] == null || c[i].getType().isAir() ? "AIR"
+                    : isSettingsItem(c[i]) ? "NETHER_STAR" : c[i].getType().name();
+        }
+        s.layout = l;
+    }
+
+    public static void give(Player p, BotSettings s) {
         PlayerInventory inv = p.getInventory();
         inv.clear();
-        inv.setItem(0, sword());
-        inv.setItem(1, new ItemStack(Material.WIND_CHARGE, 64));
-        inv.setItem(2, new ItemStack(Material.ENDER_PEARL, 16));
-        inv.setItem(3, new ItemStack(Material.COOKED_BEEF, 64));
-        inv.setItem(4, spear());
-        inv.setItem(5, shield());
-        inv.setItem(6, elytra());
-        inv.setItem(7, densityMace());
-        inv.setItem(8, totem());
-        inv.setItemInOffHand(totem());
-
-        inv.setHelmet(helmet());
-        inv.setChestplate(chestplate());
-        inv.setLeggings(leggings());
-        inv.setBoots(boots());
-
-        inv.setItem(SETTINGS_SLOT, settingsItem());
-        inv.setItem(10, new ItemStack(Material.WIND_CHARGE, 64));
-        inv.setItem(11, new ItemStack(Material.ENDER_PEARL, 16));
-        for (int slot = 12; slot <= 35; slot++) {
-            inv.setItem(slot, totem());
+        String[] l = s.layout != null ? s.layout : defaultLayout();
+        ItemStack[] contents = new ItemStack[41];
+        for (int i = 0; i < 41; i++) {
+            contents[i] = fromId(l[i]);
         }
+        inv.setContents(contents);
         inv.setHeldItemSlot(0);
 
         for (PotionEffect e : p.getActivePotionEffects()) {
