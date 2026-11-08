@@ -100,9 +100,10 @@ public final class MacePractice extends JavaPlugin {
         w.setStorm(false);
         w.setThundering(false);
         w.setDifficulty(Difficulty.NORMAL);
-        w.setSpawnLocation(Arena.playerSpawn(w));
-        w.getWorldBorder().setCenter(0, 0);
-        w.getWorldBorder().setSize(Arena.RADIUS * 2 + 2);
+        w.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
+        w.setSpawnLocation(Arena.MACE.playerSpawn(w));
+        w.getWorldBorder().setCenter(0, 80);
+        w.getWorldBorder().setSize(400);
         // Leftovers from a crash.
         for (Mannequin m : w.getEntitiesByClass(Mannequin.class)) {
             m.remove();
@@ -111,10 +112,13 @@ public final class MacePractice extends JavaPlugin {
             t.remove();
         }
         Arena.build(w, theme);
-        // Keep the arena ticking (bot physics runs even if you fly off with an elytra).
-        for (int cx = -2; cx <= 1; cx++) {
-            for (int cz = -2; cz <= 1; cz++) {
-                w.setChunkForceLoaded(cx, cz, true);
+        Arena.buildCrystal(w);
+        // Keep both arenas ticking (bot physics runs even if you fly off with an elytra).
+        for (Arena a : new Arena[]{Arena.MACE, Arena.CRYSTAL}) {
+            for (int cx = (a.cx - Arena.RADIUS) >> 4; cx <= (a.cx + Arena.RADIUS) >> 4; cx++) {
+                for (int cz = (a.cz - Arena.RADIUS) >> 4; cz <= (a.cz + Arena.RADIUS) >> 4; cz++) {
+                    w.setChunkForceLoaded(cx, cz, true);
+                }
             }
         }
         leaderboard.render(w);
@@ -154,6 +158,22 @@ public final class MacePractice extends JavaPlugin {
 
     public Leaderboard leaderboard() {
         return leaderboard;
+    }
+
+    /**
+     * Rebuilds the crystal arena's terrain. Skipped while someone else is mid-fight in there,
+     * unless forced from the menu.
+     */
+    public void regenCrystal(Player requester, boolean force) {
+        if (!force) {
+            for (Player other : Bukkit.getOnlinePlayers()) {
+                if (!other.equals(requester) && settings(other).mode == BotSettings.Mode.CRYSTAL
+                        && Arena.CRYSTAL.inside(other.getLocation())) {
+                    return;
+                }
+            }
+        }
+        Arena.buildCrystal(arenaWorld());
     }
 
     public World arenaWorld() {
@@ -197,9 +217,17 @@ public final class MacePractice extends JavaPlugin {
 
     /** Full reset of a round: heal + re-kit the player, reset the bot, start the countdown. */
     public void resetRound(Player p) {
-        Location spawn = Arena.playerSpawn(arenaWorld());
+        BotSettings s = settings(p);
+        if (s.mode == BotSettings.Mode.CRYSTAL) {
+            regenCrystal(p, false);
+        }
+        Location spawn = Arena.of(s.mode).playerSpawn(arenaWorld());
         p.teleport(spawn);
-        Kit.give(p, settings(p));
+        if (p.getGameMode() != org.bukkit.GameMode.CREATIVE && p.getGameMode() != org.bukkit.GameMode.SPECTATOR) {
+            // Crystal PvP needs block placing; mace arena stays protected.
+            p.setGameMode(s.mode == BotSettings.Mode.CRYSTAL ? org.bukkit.GameMode.SURVIVAL : org.bukkit.GameMode.ADVENTURE);
+        }
+        Kit.give(p, s);
         PracticeBot bot = bot(p);
         if (bot == null) {
             spawnBot(p);
@@ -219,12 +247,17 @@ public final class MacePractice extends JavaPlugin {
             case "bot" -> Menu.open(p, this);
             case "kit" -> Kit.give(p, s);
             case "resetbot" -> resetRound(p);
+            case "mode" -> {
+                s.mode = s.mode.next();
+                resetRound(p);
+                p.sendMessage(Component.text("Mode: " + s.mode.label, NamedTextColor.GOLD));
+            }
             case "savekit" -> {
                 Kit.saveLayout(p, s);
                 p.sendMessage(Component.text("Kit layout saved! It's used every time you get your kit.", NamedTextColor.GREEN));
             }
             case "resetkit" -> {
-                s.layout = null;
+                s.setLayout(s.mode, null);
                 Kit.give(p, s);
                 p.sendMessage(Component.text("Kit layout reset to default.", NamedTextColor.YELLOW));
             }
@@ -233,7 +266,8 @@ public final class MacePractice extends JavaPlugin {
                 p.sendMessage(Component.text("Wins " + s.wins + "  Losses " + s.losses + "  Totems popped " + s.popsForced
                         + "  Max combo " + s.maxCombo, NamedTextColor.GRAY));
                 for (BotSettings.Difficulty d : BotSettings.Difficulty.values()) {
-                    p.sendMessage(Component.text("Best " + d.name() + ": " + BotSettings.formatTime(s.bestMs[d.ordinal()]), NamedTextColor.AQUA));
+                    p.sendMessage(Component.text("Best " + d.name() + ":  mace " + BotSettings.formatTime(s.bestMs[0][d.ordinal()])
+                            + "   crystal " + BotSettings.formatTime(s.bestMs[1][d.ordinal()]), NamedTextColor.AQUA));
                 }
             }
             default -> {

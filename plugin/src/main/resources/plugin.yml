@@ -1,5 +1,5 @@
 name: MacePractice
-version: 1.1.0
+version: 1.2.0
 main: dev.macepractice.MacePractice
 api-version: '26.2'
 load: STARTUP
@@ -20,3 +20,6 @@ commands:
     description: Reset your kit layout to the default
   stats:
     description: Show your practice stats
+  mode:
+    description: Switch between Mace PvP and Crystal PvP
+    aliases: [cpvp, crystal]

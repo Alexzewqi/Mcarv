@@ -33,7 +33,7 @@ public final class VoidGenerator extends ChunkGenerator {
 
     @Override
     public Location getFixedSpawnLocation(World world, Random random) {
-        return Arena.playerSpawn(world);
+        return Arena.MACE.playerSpawn(world);
     }
 
     @Override

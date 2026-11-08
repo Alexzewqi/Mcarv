@@ -1,4 +1,4 @@
-# Mace PvP Practice Server (Minecraft 26.2, Paper)
+# Mace + Crystal PvP Practice Server (Minecraft 26.2, Paper)
 
 A small server with one arena and a practice bot. Every player who joins gets their own bot.
 
@@ -40,6 +40,16 @@ You also get a totem in your offhand, netherite armor (Protection IV, Unbreaking
 The plugin builds the arena itself, so there's no map to download. It's a **flat 61×61 floor** floating in the void. It has walls with invisible barriers that go up to build height, so wind charges and elytra can't take you out. You spawn on the north marker and the bot spawns on the south one.
 There are **7 themes**, all flat with normal-grip blocks: Deepslate, Nether, End, Snow, Desert, Copper and Grass. Change the theme from the menu.
 
+## Crystal PvP mode
+
+To switch modes, use **`/mode`** (also `/cpvp`) or the crystal/mace button at the top of the menu.
+
+- You get your own **crystal arena**: grass on dirt on stone, about 8 blocks deep. Crystals and anchors **blow the terrain up**. The terrain **rebuilds at the start of every round**, or right away with *Regenerate Terrain* in the menu.
+- You're in survival there, so you can place and break blocks. Blocks don't drop items. The walls are blast-proof reinforced deepslate.
+- **Kit:** netherite sword, end crystals, obsidian, respawn anchors, glowstone, golden apples, pearls, a netherite pickaxe and a totem on the hotbar. Spare crystals, obsidian, anchors, glowstone, XP bottles and a netherite axe are in the inventory, plus full netherite armor (Protection IV + Mending) and totems.
+- **The bot crystals you.** It places obsidian next to you, puts a crystal on it and blows it up. Sometimes it places a respawn anchor, charges it with glowstone and detonates it. It also strafes, hits with the sword, eats gapples when it's low, and jumps out of craters. Difficulty controls how fast it crystals: about 2.5 seconds between crystals on Easy, down to about 0.5 seconds on Insane.
+- Crystal mode keeps its own best times, kit layout and leaderboard.
+
 ## Settings menu
 
 To open the menu, sneak and press **F**, run **`/bot`**, or click the **nether star** in your inventory.
@@ -62,7 +72,7 @@ To open the menu, sneak and press **F**, run **`/bot`**, or click the **nether s
 - The bot's **HP and totems show under its name**.
 - **Stats are saved** across restarts in `server/plugins/MacePractice/data.yml`. Use `/stats` to see them.
 
-Commands: `/bot`, `/kit`, `/resetbot`, `/savekit`, `/resetkit`, `/stats`.
+Commands: `/bot`, `/mode`, `/kit`, `/resetbot`, `/savekit`, `/resetkit`, `/stats`.
 
 ## How the bot plays
 

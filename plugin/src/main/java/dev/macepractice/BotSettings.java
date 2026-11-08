@@ -45,6 +45,20 @@ public final class BotSettings {
         }
     }
 
+    public enum Mode {
+        MACE("Mace PvP"), CRYSTAL("Crystal PvP");
+
+        final String label;
+
+        Mode(String label) {
+            this.label = label;
+        }
+
+        public Mode next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
     public enum Skin {
         DEFAULT("Default"), MINE("Your skin");
 
@@ -60,6 +74,7 @@ public final class BotSettings {
     }
 
     // ---- toggles ----
+    public Mode mode = Mode.MACE;
     public boolean movement = true;
     public boolean attacks = true;
     public boolean maceCombos = true;
@@ -73,15 +88,30 @@ public final class BotSettings {
     public boolean sidebar = true;
     public boolean countdown = true;
     public boolean infiniteFood = false;
-    /** Saved kit layout: material name per inventory slot (41 entries), or null for the default layout. */
+    /** Saved kit layouts per mode: material name per inventory slot (41 entries), or null for the default. */
     public String[] layout;
+    public String[] crystalLayout;
 
     // ---- stats ----
     public int wins;
     public int losses;
     public int popsForced;
     public int maxCombo;
-    public long[] bestMs = new long[Difficulty.values().length];
+    /** Fastest bot kill, [mode][difficulty]. */
+    public long[][] bestMs = new long[Mode.values().length][Difficulty.values().length];
+
+    public String[] layoutFor(Mode m) {
+        return m == Mode.CRYSTAL ? crystalLayout : layout;
+    }
+
+    public void setLayout(Mode m, String[] l) {
+        if (m == Mode.CRYSTAL) crystalLayout = l;
+        else layout = l;
+    }
+
+    public long best() {
+        return bestMs[mode.ordinal()][difficulty.ordinal()];
+    }
 
     public void load(ConfigurationSection c) {
         if (c == null) return;
@@ -100,17 +130,24 @@ public final class BotSettings {
         } catch (IllegalArgumentException ignored) {
         }
         try {
+            mode = Mode.valueOf(c.getString("mode", mode.name()));
+        } catch (IllegalArgumentException ignored) {
+        }
+        try {
             skin = Skin.valueOf(c.getString("skin", skin.name()));
         } catch (IllegalArgumentException ignored) {
         }
         List<String> l = c.getStringList("layout");
         layout = l.size() == 41 ? l.toArray(new String[0]) : null;
+        l = c.getStringList("crystalLayout");
+        crystalLayout = l.size() == 41 ? l.toArray(new String[0]) : null;
         wins = c.getInt("wins");
         losses = c.getInt("losses");
         popsForced = c.getInt("popsForced");
         maxCombo = c.getInt("maxCombo");
         for (Difficulty d : Difficulty.values()) {
-            bestMs[d.ordinal()] = c.getLong("best." + d.name(), 0);
+            bestMs[Mode.MACE.ordinal()][d.ordinal()] = c.getLong("best." + d.name(), 0);
+            bestMs[Mode.CRYSTAL.ordinal()][d.ordinal()] = c.getLong("bestCrystal." + d.name(), 0);
         }
     }
 
@@ -127,13 +164,18 @@ public final class BotSettings {
         c.set("infiniteFood", infiniteFood);
         c.set("difficulty", difficulty.name());
         c.set("skin", skin.name());
+        c.set("mode", mode.name());
+        c.set("crystalLayout", crystalLayout == null ? null : Arrays.asList(crystalLayout));
         c.set("layout", layout == null ? null : Arrays.asList(layout));
         c.set("wins", wins);
         c.set("losses", losses);
         c.set("popsForced", popsForced);
         c.set("maxCombo", maxCombo);
         for (Difficulty d : Difficulty.values()) {
-            c.set("best." + d.name(), bestMs[d.ordinal()] == 0 ? null : bestMs[d.ordinal()]);
+            long m = bestMs[Mode.MACE.ordinal()][d.ordinal()];
+            long cr = bestMs[Mode.CRYSTAL.ordinal()][d.ordinal()];
+            c.set("best." + d.name(), m == 0 ? null : m);
+            c.set("bestCrystal." + d.name(), cr == 0 ? null : cr);
         }
     }
 

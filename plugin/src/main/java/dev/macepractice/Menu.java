@@ -30,7 +30,8 @@ public final class Menu implements Listener {
     private static final int MY_TOTEMS = 19, FOOD = 20, NUMBERS = 21, SIDEBAR = 22, COUNTDOWN = 23,
             THEME = 24, STATS = 25;
     // Row 5: actions
-    private static final int SAVE_LAYOUT = 37, RESET_LAYOUT = 38, REFILL = 40, RESET = 42, CLOSE = 43;
+    private static final int SAVE_LAYOUT = 37, RESET_LAYOUT = 38, REGEN = 39, REFILL = 40, RESET = 42, CLOSE = 43;
+    private static final int MODE = 4;
 
     private final MacePractice plugin;
 
@@ -57,7 +58,15 @@ public final class Menu implements Listener {
     private static void fill(Inventory inv, BotSettings s, MacePractice plugin) {
         ItemStack pane = item(Material.BLACK_STAINED_GLASS_PANE, Component.text(" "), List.of());
         for (int i = 0; i < inv.getSize(); i++) inv.setItem(i, pane);
-        inv.setItem(4, item(Material.WITHER_SKELETON_SKULL, Component.text("Bot", NamedTextColor.RED), List.of(line("How your bot behaves ↓"))));
+        boolean crystal = s.mode == BotSettings.Mode.CRYSTAL;
+        ItemStack modeItem = item(crystal ? Material.END_CRYSTAL : Material.MACE,
+                Component.text("Mode: " + s.mode.label, NamedTextColor.LIGHT_PURPLE).decorate(TextDecoration.BOLD),
+                List.of(line(crystal ? "Crystals + anchors on grass terrain that blows up." : "Mace, wind charges, elytra, spear."),
+                        line("Click to switch (or /mode). Starts a new round.")));
+        ItemMeta mm = modeItem.getItemMeta();
+        mm.setEnchantmentGlintOverride(true);
+        modeItem.setItemMeta(mm);
+        inv.setItem(MODE, modeItem);
         inv.setItem(31, item(Material.PLAYER_HEAD, Component.text("You", NamedTextColor.AQUA), List.of(line("Your options ↑  Actions ↓"))));
 
         inv.setItem(MOVEMENT, toggle(Material.LEATHER_BOOTS, "Bot Movement", s.movement,
@@ -65,9 +74,9 @@ public final class Menu implements Listener {
         inv.setItem(ATTACKS, toggle(Material.NETHERITE_SWORD, "Bot Attacks", s.attacks,
                 "Off = punching bag mode."));
         inv.setItem(COMBOS, toggle(Material.MACE, "Bot Mace Combos", s.maceCombos,
-                "Wind charge up + density mace smash,", "chained with Wind Burst."));
+                "Wind charge up + density mace smash,", "chained with Wind Burst.", "(Mace mode only)"));
         inv.setItem(SHIELD, toggle(Material.SHIELD, "Bot Shields Your Dives", s.shield,
-                "Off = it sidesteps instead."));
+                "Off = it sidesteps instead.", "(Mace mode only)"));
         Material diffIcon = switch (s.difficulty) {
             case EASY -> Material.LIME_CONCRETE;
             case NORMAL -> Material.YELLOW_CONCRETE;
@@ -100,14 +109,17 @@ public final class Menu implements Listener {
         stats.add(line("Totems popped: " + s.popsForced));
         stats.add(line("Max combo: " + s.maxCombo));
         for (BotSettings.Difficulty d : BotSettings.Difficulty.values()) {
-            stats.add(line("Best " + d.name() + ": " + BotSettings.formatTime(s.bestMs[d.ordinal()])));
+            stats.add(line("Best " + d.name() + ": mace " + BotSettings.formatTime(s.bestMs[0][d.ordinal()])
+                    + "  crystal " + BotSettings.formatTime(s.bestMs[1][d.ordinal()])));
         }
         inv.setItem(STATS, item(Material.WRITABLE_BOOK, Component.text("Your Stats", NamedTextColor.AQUA), stats));
 
         inv.setItem(SAVE_LAYOUT, item(Material.LIME_SHULKER_BOX, Component.text("Save Kit Layout", NamedTextColor.GREEN),
                 List.of(line("Move your items where you like them,"), line("then click here (or /savekit)."))));
         inv.setItem(RESET_LAYOUT, item(Material.RED_SHULKER_BOX, Component.text("Reset Kit Layout", NamedTextColor.RED),
-                List.of(line("Back to the default hotbar."))));
+                List.of(line("Back to the default hotbar for this mode."))));
+        inv.setItem(REGEN, item(Material.GRASS_BLOCK, Component.text("Regenerate Terrain", NamedTextColor.GREEN),
+                List.of(line("Rebuilds the crystal arena's terrain now."), line("(Also happens every round.)"))));
         inv.setItem(REFILL, item(Material.CHEST, Component.text("Refill My Kit", NamedTextColor.AQUA),
                 List.of(line("Heals you and gives the full kit back."))));
         inv.setItem(RESET, item(Material.RESPAWN_ANCHOR, Component.text("Reset Round", NamedTextColor.AQUA),
@@ -135,6 +147,11 @@ public final class Menu implements Listener {
         BotSettings s = plugin.settings(p);
         PracticeBot bot = plugin.bot(p);
         switch (e.getRawSlot()) {
+            case MODE -> {
+                s.mode = s.mode.next();
+                plugin.resetRound(p);
+            }
+            case REGEN -> plugin.regenCrystal(p, true);
             case MOVEMENT -> s.movement = !s.movement;
             case ATTACKS -> s.attacks = !s.attacks;
             case COMBOS -> s.maceCombos = !s.maceCombos;
@@ -159,7 +176,7 @@ public final class Menu implements Listener {
                 p.sendMessage(Component.text("Kit layout saved!", NamedTextColor.GREEN));
             }
             case RESET_LAYOUT -> {
-                s.layout = null;
+                s.setLayout(s.mode, null);
                 Kit.give(p, s);
                 p.sendMessage(Component.text("Kit layout reset.", NamedTextColor.YELLOW));
             }

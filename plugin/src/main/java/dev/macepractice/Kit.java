@@ -51,6 +51,23 @@ public final class Kit {
         return ench(Material.ELYTRA, Enchantment.UNBREAKING, 3, Enchantment.MENDING, 1);
     }
 
+    public static ItemStack pickaxe() {
+        return ench(Material.NETHERITE_PICKAXE, Enchantment.EFFICIENCY, 5, Enchantment.UNBREAKING, 3, Enchantment.MENDING, 1);
+    }
+
+    public static ItemStack axe() {
+        return ench(Material.NETHERITE_AXE, Enchantment.SHARPNESS, 5, Enchantment.EFFICIENCY, 5,
+                Enchantment.UNBREAKING, 3, Enchantment.MENDING, 1);
+    }
+
+    /** Bot armor never breaks (crystals shred durability). */
+    public static ItemStack unbreakable(ItemStack it) {
+        ItemMeta meta = it.getItemMeta();
+        meta.setUnbreakable(true);
+        it.setItemMeta(meta);
+        return it;
+    }
+
     public static ItemStack totem() {
         return new ItemStack(Material.TOTEM_OF_UNDYING);
     }
@@ -111,7 +128,19 @@ public final class Kit {
     // ---- loadout ------------------------------------------------------------------------
 
     /** Default layout, in {@link PlayerInventory#getContents()} order: 0-35 storage, 36-39 boots..helmet, 40 offhand. */
-    private static String[] defaultLayout() {
+    private static String[] defaultLayout(BotSettings.Mode mode) {
+        if (mode == BotSettings.Mode.CRYSTAL) {
+            String[] l = defaultLayout(BotSettings.Mode.MACE);
+            String[] hotbar = {"NETHERITE_SWORD", "END_CRYSTAL", "OBSIDIAN", "RESPAWN_ANCHOR", "GLOWSTONE",
+                    "GOLDEN_APPLE", "ENDER_PEARL", "NETHERITE_PICKAXE", "TOTEM_OF_UNDYING"};
+            System.arraycopy(hotbar, 0, l, 0, 9);
+            String[] spare = {"EXPERIENCE_BOTTLE", "EXPERIENCE_BOTTLE", "EXPERIENCE_BOTTLE", "END_CRYSTAL", "END_CRYSTAL",
+                    "OBSIDIAN", "OBSIDIAN", "RESPAWN_ANCHOR", "GLOWSTONE", "GOLDEN_APPLE", "NETHERITE_AXE", "COOKED_BEEF",
+                    "ENDER_PEARL"};
+            System.arraycopy(spare, 0, l, 10, spare.length);
+            for (int i = 10 + spare.length; i <= 35; i++) l[i] = "TOTEM_OF_UNDYING";
+            return l;
+        }
         String[] l = new String[41];
         java.util.Arrays.fill(l, "TOTEM_OF_UNDYING");
         // Hotbar: sword, wind charges, pearls, steak, spear, shield, elytra (in place of the breach mace),
@@ -144,6 +173,14 @@ public final class Kit {
             case "MACE" -> densityMace();
             case "TOTEM_OF_UNDYING" -> totem();
             case "NETHER_STAR" -> settingsItem();
+            case "END_CRYSTAL" -> new ItemStack(Material.END_CRYSTAL, 64);
+            case "OBSIDIAN" -> new ItemStack(Material.OBSIDIAN, 64);
+            case "RESPAWN_ANCHOR" -> new ItemStack(Material.RESPAWN_ANCHOR, 64);
+            case "GLOWSTONE" -> new ItemStack(Material.GLOWSTONE, 64);
+            case "GOLDEN_APPLE" -> new ItemStack(Material.GOLDEN_APPLE, 64);
+            case "EXPERIENCE_BOTTLE" -> new ItemStack(Material.EXPERIENCE_BOTTLE, 64);
+            case "NETHERITE_PICKAXE" -> pickaxe();
+            case "NETHERITE_AXE" -> axe();
             case "NETHERITE_HELMET" -> helmet();
             case "NETHERITE_CHESTPLATE" -> chestplate();
             case "NETHERITE_LEGGINGS" -> leggings();
@@ -160,13 +197,13 @@ public final class Kit {
             l[i] = c[i] == null || c[i].getType().isAir() ? "AIR"
                     : isSettingsItem(c[i]) ? "NETHER_STAR" : c[i].getType().name();
         }
-        s.layout = l;
+        s.setLayout(s.mode, l);
     }
 
     public static void give(Player p, BotSettings s) {
         PlayerInventory inv = p.getInventory();
         inv.clear();
-        String[] l = s.layout != null ? s.layout : defaultLayout();
+        String[] l = s.layoutFor(s.mode) != null ? s.layoutFor(s.mode) : defaultLayout(s.mode);
         ItemStack[] contents = new ItemStack[41];
         for (int i = 0; i < 41; i++) {
             contents[i] = fromId(l[i]);
@@ -186,5 +223,6 @@ public final class Kit {
         p.setAbsorptionAmount(0);
         p.setCooldown(Material.ENDER_PEARL, 0);
         p.setCooldown(Material.WIND_CHARGE, 0);
+        p.setCooldown(Material.GOLDEN_APPLE, 0);
     }
 }

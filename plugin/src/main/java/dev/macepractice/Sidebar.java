@@ -51,10 +51,11 @@ public final class Sidebar {
             lines.add(kv("Combo", bot.combo() + " (max " + s.maxCombo + ")", NamedTextColor.LIGHT_PURPLE));
         }
         lines.add(Component.empty());
+        lines.add(kv("Mode", s.mode.label, NamedTextColor.AQUA));
         lines.add(kv("Difficulty", s.difficulty.name(), NamedTextColor.WHITE));
         lines.add(kv("Wins / Losses", s.wins + " / " + s.losses, NamedTextColor.GREEN));
         lines.add(kv("Totems popped", String.valueOf(s.popsForced), NamedTextColor.GOLD));
-        lines.add(kv("Best (" + s.difficulty.name().charAt(0) + ")", BotSettings.formatTime(s.bestMs[s.difficulty.ordinal()]), NamedTextColor.AQUA));
+        lines.add(kv("Best (" + s.difficulty.name().charAt(0) + ")", BotSettings.formatTime(s.best()), NamedTextColor.AQUA));
         lines.add(Component.empty());
         lines.add(Component.text("/bot  •  sneak + F", NamedTextColor.DARK_GRAY));
 

@@ -5,6 +5,9 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
+import org.bukkit.Location;
+import org.bukkit.block.Block;
+import org.bukkit.entity.EnderCrystal;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Firework;
 import org.bukkit.entity.Mannequin;
@@ -15,7 +18,10 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityResurrectEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
@@ -48,7 +54,7 @@ public final class Listeners implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
         setupPlayer(e.getPlayer());
-        e.getPlayer().sendMessage(Component.text("Mace PvP practice! ", NamedTextColor.GOLD)
+        e.getPlayer().sendMessage(Component.text("Mace + Crystal PvP practice! ", NamedTextColor.GOLD)
                 .append(Component.text("Open bot settings with sneak + F, /bot, or the nether star in your inventory.", NamedTextColor.GRAY)));
     }
 
@@ -182,7 +188,7 @@ public final class Listeners implements Listener {
     @EventHandler
     public void onRespawn(PlayerRespawnEvent e) {
         Player p = e.getPlayer();
-        e.setRespawnLocation(Arena.playerSpawn(plugin.arenaWorld()));
+        e.setRespawnLocation(Arena.of(plugin.settings(p).mode).playerSpawn(plugin.arenaWorld()));
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (p.isOnline()) plugin.resetRound(p);
         });
@@ -207,11 +213,75 @@ public final class Listeners implements Listener {
 
     @EventHandler
     public void onBreak(BlockBreakEvent e) {
-        if (e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true);
+        if (e.getPlayer().getGameMode() == GameMode.CREATIVE) return;
+        if (Arena.CRYSTAL.buildable(e.getBlock().getLocation())) {
+            e.setDropItems(false);
+            e.setExpToDrop(0);
+        } else {
+            e.setCancelled(true);
+        }
     }
 
     @EventHandler
     public void onPlace(BlockPlaceEvent e) {
-        if (e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true);
+        if (e.getPlayer().getGameMode() == GameMode.CREATIVE) return;
+        if (!Arena.CRYSTAL.buildable(e.getBlock().getLocation())) e.setCancelled(true);
+    }
+
+    // ---- crystal arena explosions ------------------------------------------------------
+
+    @EventHandler(ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent e) {
+        e.setYield(0f);
+        Location center = null;
+        if (e.getEntity() instanceof EnderCrystal c) {
+            center = c.getLocation();
+        } else if (e.getEntity() instanceof Mannequin m) {
+            PracticeBot bot = plugin.botByEntity(m);
+            if (bot != null) center = bot.explosionCenter();
+        }
+        // A crystal sitting on obsidian leaves the terrain untouched on this server version
+        // (every ray dies in the obsidian), so carve the crater ourselves.
+        if (center != null && e.blockList().size() < 4 && Arena.CRYSTAL.buildable(center)) {
+            carveCrater(center, e.blockList());
+        }
+        e.blockList().removeIf(b -> !Arena.CRYSTAL.buildable(b.getLocation()));
+    }
+
+    private static void carveCrater(Location center, java.util.List<Block> out) {
+        java.util.concurrent.ThreadLocalRandom r = java.util.concurrent.ThreadLocalRandom.current();
+        double radius = 3.2;
+        int cx = center.getBlockX(), cy = center.getBlockY(), cz = center.getBlockZ();
+        for (int x = -3; x <= 3; x++) {
+            for (int y = -3; y <= 1; y++) {
+                for (int z = -3; z <= 3; z++) {
+                    Block b = center.getWorld().getBlockAt(cx + x, cy + y, cz + z);
+                    if (b.getType().isAir() || b.getType().getBlastResistance() >= 100 || out.contains(b)) continue;
+                    double d = b.getLocation().add(0.5, 0.5, 0.5).distance(center);
+                    if (d < 1.8 || (d < radius && r.nextDouble() < 1 - d / radius + 0.25)) {
+                        out.add(b);
+                    }
+                }
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent e) {
+        e.setYield(0f);
+        e.blockList().removeIf(b -> !Arena.CRYSTAL.buildable(b.getLocation()));
+    }
+
+    /** The bot places its crystals/anchors away from itself, but skip its own blast so it doesn't self-pop. */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onBotSelfDamage(EntityDamageEvent e) {
+        if (e.getEntity() instanceof Mannequin m) {
+            PracticeBot bot = plugin.botByEntity(m);
+            if (bot != null && bot.isExploding()
+                    && (e.getCause() == EntityDamageEvent.DamageCause.ENTITY_EXPLOSION
+                    || e.getCause() == EntityDamageEvent.DamageCause.BLOCK_EXPLOSION)) {
+                e.setCancelled(true);
+            }
+        }
     }
 }

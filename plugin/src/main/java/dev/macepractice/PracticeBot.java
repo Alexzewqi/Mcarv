@@ -12,7 +12,12 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.damage.DamageType;
+import org.bukkit.entity.EnderCrystal;
 import org.bukkit.entity.EnderPearl;
+import org.bukkit.block.Block;
+import org.bukkit.block.data.type.RespawnAnchor;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.entity.Mannequin;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EntityEquipment;
@@ -66,6 +71,21 @@ public final class PracticeBot {
     private int combo;
     private int lastComboTick;
 
+    // ---- crystal pvp ----
+    private static final int[] CRYSTAL_CD = {50, 28, 16, 9};
+    private static final int[] CRYSTAL_DELAY = {8, 4, 2, 1};
+    private static final int[] ANCHOR_CD = {160, 90, 60, 40};
+    private static final int[] ANCHOR_FUSE = {10, 6, 4, 3};
+    private int crystalCd = 40;
+    private int anchorCd = 80;
+    private int gappleCd;
+    private EnderCrystal pendingCrystal;
+    private int crystalExplodeAt;
+    private Block anchorBlock;
+    private int anchorStage;
+    private boolean exploding;
+    private Location explosionCenter;
+
     public PracticeBot(MacePractice plugin, Player owner, BotSettings settings) {
         this.plugin = plugin;
         this.owner = owner;
@@ -84,7 +104,7 @@ public final class PracticeBot {
 
     public void spawn() {
         World w = plugin.arenaWorld();
-        Location loc = Arena.botSpawn(w);
+        Location loc = arena().botSpawn(w);
         entity = w.spawn(loc, Mannequin.class, m -> {
             m.customName(Component.text(owner.getName() + "'s Bot", NamedTextColor.RED));
             m.setCustomNameVisible(true);
@@ -98,10 +118,10 @@ public final class PracticeBot {
                 step.setBaseValue(0.6);
             }
             EntityEquipment eq = m.getEquipment();
-            eq.setHelmet(Kit.helmet());
-            eq.setChestplate(Kit.chestplate());
-            eq.setLeggings(Kit.leggings());
-            eq.setBoots(Kit.boots());
+            eq.setHelmet(Kit.unbreakable(Kit.helmet()));
+            eq.setChestplate(Kit.unbreakable(Kit.chestplate()));
+            eq.setLeggings(Kit.unbreakable(Kit.leggings()));
+            eq.setBoots(Kit.unbreakable(Kit.boots()));
             eq.setItemInMainHand(Kit.sword());
             eq.setItemInOffHand(Kit.totem());
         });
@@ -114,7 +134,7 @@ public final class PracticeBot {
             spawn();
             return;
         }
-        entity.teleport(Arena.botSpawn(entity.getWorld()));
+        entity.teleport(arena().botSpawn(entity.getWorld()));
         entity.setVelocity(new Vector());
         entity.setFireTicks(0);
         entity.setFallDistance(0);
@@ -147,6 +167,12 @@ public final class PracticeBot {
         pops = 0;
         respawnIn = -1;
         combo = 0;
+        crystalCd = 40;
+        anchorCd = 80;
+        gappleCd = 0;
+        if (pendingCrystal != null) pendingCrystal.remove();
+        pendingCrystal = null;
+        anchorBlock = null;
         countdown = s.countdown ? 60 : 0;
         roundStart = System.currentTimeMillis() + countdown * 50L;
         if (countdown == 0) {
@@ -184,12 +210,13 @@ public final class PracticeBot {
         respawnIn = RESPAWN_DELAY;
         long ms = roundMs();
         s.wins++;
+        long[] best = s.bestMs[s.mode.ordinal()];
         int d = s.difficulty.ordinal();
-        boolean record = s.bestMs[d] == 0 || ms < s.bestMs[d];
+        boolean record = best[d] == 0 || ms < best[d];
         if (record) {
-            s.bestMs[d] = ms;
+            best[d] = ms;
         }
-        plugin.leaderboard().submit(owner.getName(), owner.getUniqueId().toString(), s.difficulty, ms);
+        plugin.leaderboard().submit(owner.getName(), owner.getUniqueId().toString(), s.mode, s.difficulty, ms);
         plugin.leaderboard().render(plugin.arenaWorld());
         owner.showTitle(Title.title(
                 Component.text("You won!", NamedTextColor.GREEN),
@@ -236,6 +263,18 @@ public final class PracticeBot {
         return Math.max(0, System.currentTimeMillis() - roundStart);
     }
 
+    public Location explosionCenter() {
+        return exploding ? explosionCenter : null;
+    }
+
+    public boolean isExploding() {
+        return exploding;
+    }
+
+    private Arena arena() {
+        return Arena.of(s.mode);
+    }
+
     public boolean inCountdown() {
         return countdown > 0;
     }
@@ -272,8 +311,8 @@ public final class PracticeBot {
         }
 
         Location me = entity.getLocation();
-        if (!Arena.inside(me) || me.getY() > 400) {
-            entity.teleport(Arena.botSpawn(me.getWorld()));
+        if (!arena().inside(me) || me.getY() > 400) {
+            entity.teleport(arena().botSpawn(me.getWorld()));
             entity.setVelocity(new Vector());
             entity.setFallDistance(0);
             return;
@@ -323,7 +362,7 @@ public final class PracticeBot {
 
         boolean engage = owner.getWorld().equals(entity.getWorld()) && !owner.isDead()
                 && (owner.getGameMode() == org.bukkit.GameMode.SURVIVAL || owner.getGameMode() == org.bukkit.GameMode.ADVENTURE)
-                && Arena.inside(owner.getLocation());
+                && arena().inside(owner.getLocation());
 
         if (!engage) {
             if (state == State.BLOCK) stopBlocking();
@@ -335,6 +374,10 @@ public final class PracticeBot {
         entity.lookAt(owner.getEyeLocation().getX(), owner.getEyeLocation().getY(), owner.getEyeLocation().getZ(), LookAnchor.EYES);
         entity.setBodyYaw(entity.getYaw());
 
+        if (s.mode == BotSettings.Mode.CRYSTAL) {
+            crystalFight();
+            return;
+        }
         switch (state) {
             case FIGHT -> fight();
             case COMBO -> maceCombo();
@@ -604,6 +647,221 @@ public final class PracticeBot {
         }
         holdMain(Kit.sword());
         state = State.FIGHT;
+    }
+
+    // ---- crystal pvp --------------------------------------------------------------------
+
+    private void crystalFight() {
+        int d = s.difficulty.ordinal();
+        if (crystalCd > 0) crystalCd--;
+        if (anchorCd > 0) anchorCd--;
+        if (gappleCd > 0) gappleCd--;
+        tickPending();
+
+        Location me = entity.getLocation();
+        Vector flat = owner.getLocation().toVector().subtract(me.toVector()).setY(0);
+        double dist = flat.length();
+        Vector fwd = dist > 0.001 ? flat.clone().normalize() : new Vector(0, 0, 1);
+        Vector side = new Vector(-fwd.getZ(), 0, fwd.getX()).multiply(strafeDir);
+
+        if (gappleCd == 0 && entity.getHealth() < 12) {
+            eatGapple();
+        }
+
+        if (s.movement) {
+            if (--strafeSwitch <= 0) {
+                strafeDir = ThreadLocalRandom.current().nextBoolean() ? 1 : -1;
+                strafeSwitch = 15 + ThreadLocalRandom.current().nextInt(30);
+            }
+            double speed = s.difficulty.speed;
+            Vector desired;
+            if (dist > 4.5) {
+                desired = fwd.clone().multiply(speed).add(side.clone().multiply(speed * 0.2));
+            } else if (dist < 2.3) {
+                desired = fwd.clone().multiply(-speed * 0.6).add(side.clone().multiply(speed * 0.5));
+            } else {
+                desired = side.clone().multiply(speed * 0.7).add(fwd.clone().multiply(speed * 0.1));
+            }
+            steer(desired, entity.isOnGround() ? 1.0 : 0.08);
+            // Hop out of craters / up ledges.
+            if (entity.isOnGround() && knockbackTicks == 0 && blockedAhead(desired)) {
+                Vector v = entity.getVelocity();
+                v.setY(0.42);
+                entity.setVelocity(v);
+            }
+        } else {
+            idle();
+        }
+
+        if (!s.attacks || pendingCrystal != null || anchorBlock != null) {
+            return;
+        }
+        double reach = reachTo(owner);
+        if (reach <= REACH && attackCd == 0 && ThreadLocalRandom.current().nextDouble() < 0.35) {
+            boolean falling = !entity.isOnGround() && entity.getVelocity().getY() < -0.05;
+            swordHit(falling);
+            return;
+        }
+        if (dist <= 5.5 && crystalCd == 0) {
+            if (anchorCd == 0 && ThreadLocalRandom.current().nextDouble() < 0.35 && startAnchor()) {
+                return;
+            }
+            startCrystal(d);
+        }
+    }
+
+    private boolean blockedAhead(Vector desired) {
+        if (desired.lengthSquared() < 1e-4) return false;
+        Location ahead = entity.getLocation().add(desired.clone().normalize().multiply(0.7));
+        return ahead.getBlock().getType().isSolid();
+    }
+
+    /** Highest solid block under the target's feet (within 4 blocks), or null when they're high in the air. */
+    private int groundY() {
+        Location l = owner.getLocation();
+        for (int dy = 0; dy <= 4; dy++) {
+            Block b = l.clone().subtract(0, dy + 0.01, 0).getBlock();
+            if (b.getType().isSolid()) return b.getY();
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    /** Best spot for a crystal: on the ground right next to you, on the side facing the bot. */
+    private Block findCrystalBase() {
+        int gy = groundY();
+        if (gy == Integer.MIN_VALUE) return null;
+        Location ol = owner.getLocation();
+        int px = ol.getBlockX(), pz = ol.getBlockZ();
+        Block best = null;
+        double bestDist = Double.MAX_VALUE;
+        Location eye = entity.getEyeLocation();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                Block base = entity.getWorld().getBlockAt(px + dx, gy, pz + dz);
+                if (!arena().buildable(base.getLocation())) continue;
+                if (!base.getRelative(0, 1, 0).isPassable() || !base.getRelative(0, 2, 0).isPassable()) continue;
+                Material m = base.getType();
+                if (m == Material.BARRIER || m == Material.REINFORCED_DEEPSLATE) continue;
+                double dd = base.getLocation().add(0.5, 1, 0.5).distanceSquared(eye);
+                if (dd < bestDist && dd <= 5.5 * 5.5) {
+                    bestDist = dd;
+                    best = base;
+                }
+            }
+        }
+        return best;
+    }
+
+    private void startCrystal(int d) {
+        Block base = findCrystalBase();
+        if (base == null) {
+            crystalCd = 5;
+            return;
+        }
+        World w = entity.getWorld();
+        if (base.getType() != Material.OBSIDIAN && base.getType() != Material.BEDROCK) {
+            holdMain(new ItemStack(Material.OBSIDIAN));
+            base.setType(Material.OBSIDIAN);
+            w.playSound(base.getLocation(), Sound.BLOCK_STONE_PLACE, 1f, 0.8f);
+        }
+        holdMain(new ItemStack(Material.END_CRYSTAL));
+        entity.swingMainHand();
+        pendingCrystal = w.spawn(base.getLocation().add(0.5, 1, 0.5), EnderCrystal.class, c -> {
+            c.setShowingBottom(false);
+            c.setPersistent(false);
+        });
+        crystalExplodeAt = tick + CRYSTAL_DELAY[d];
+        crystalCd = CRYSTAL_CD[d] + ThreadLocalRandom.current().nextInt(CRYSTAL_CD[d] / 3 + 1);
+    }
+
+    private boolean startAnchor() {
+        int gy = groundY();
+        if (gy == Integer.MIN_VALUE) return false;
+        Location ol = owner.getLocation();
+        Location eye = entity.getEyeLocation();
+        Block best = null;
+        double bestDist = Double.MAX_VALUE;
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] dir : dirs) {
+            Block b = entity.getWorld().getBlockAt(ol.getBlockX() + dir[0], gy + 1, ol.getBlockZ() + dir[1]);
+            if (!arena().buildable(b.getLocation()) || !b.getType().isAir()) continue;
+            double dd = b.getLocation().add(0.5, 0.5, 0.5).distanceSquared(eye);
+            if (dd < bestDist && dd <= 5.5 * 5.5) {
+                bestDist = dd;
+                best = b;
+            }
+        }
+        if (best == null) return false;
+        holdMain(new ItemStack(Material.RESPAWN_ANCHOR));
+        entity.swingMainHand();
+        best.setType(Material.RESPAWN_ANCHOR);
+        entity.getWorld().playSound(best.getLocation(), Sound.BLOCK_STONE_PLACE, 1f, 0.8f);
+        anchorBlock = best;
+        anchorStage = 0;
+        anchorCd = ANCHOR_CD[s.difficulty.ordinal()];
+        crystalCd = Math.max(crystalCd, 6);
+        return true;
+    }
+
+    private void tickPending() {
+        if (pendingCrystal != null && tick >= crystalExplodeAt) {
+            EnderCrystal c = pendingCrystal;
+            pendingCrystal = null;
+            if (c.isValid() && ThreadLocalRandom.current().nextDouble() >= s.difficulty.missChance) {
+                Location l = c.getLocation();
+                c.remove();
+                entity.swingMainHand();
+                explode(l, 6f, false);
+            }
+            holdMain(Kit.sword());
+        }
+        if (anchorBlock != null) {
+            anchorStage++;
+            if (anchorBlock.getType() != Material.RESPAWN_ANCHOR) {
+                anchorBlock = null; // you broke it
+                holdMain(Kit.sword());
+                return;
+            }
+            if (anchorStage == 2) {
+                holdMain(new ItemStack(Material.GLOWSTONE));
+                entity.swingMainHand();
+                if (anchorBlock.getBlockData() instanceof RespawnAnchor ra) {
+                    ra.setCharges(1);
+                    anchorBlock.setBlockData(ra, false);
+                }
+                entity.getWorld().playSound(anchorBlock.getLocation(), Sound.BLOCK_RESPAWN_ANCHOR_CHARGE, 1f, 1f);
+            }
+            if (anchorStage >= 2 + ANCHOR_FUSE[s.difficulty.ordinal()]) {
+                Location l = anchorBlock.getLocation().add(0.5, 0.5, 0.5);
+                anchorBlock.setType(Material.AIR);
+                anchorBlock = null;
+                entity.swingMainHand();
+                explode(l, 5f, true);
+                holdMain(Kit.sword());
+            }
+        }
+    }
+
+    private void explode(Location l, float power, boolean fire) {
+        exploding = true;
+        explosionCenter = l;
+        try {
+            l.getWorld().createExplosion(l, power, fire, true, entity);
+        } finally {
+            exploding = false;
+        }
+    }
+
+    private void eatGapple() {
+        gappleCd = 300;
+        holdMain(new ItemStack(Material.GOLDEN_APPLE));
+        entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_PLAYER_BURP, 1f, 1f);
+        entity.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 20 * 120, 0));
+        entity.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 20 * 5, 1));
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (entity != null && entity.isValid() && pendingCrystal == null && anchorBlock == null) holdMain(Kit.sword());
+        }, 10L);
     }
 
     // ---- misc ---------------------------------------------------------------------------
